@@ -1,0 +1,3 @@
+print("about to fail")
+local t = nil
+print(t.field)

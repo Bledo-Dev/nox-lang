@@ -1,0 +1,29 @@
+local function try(label, code)
+  local ok, err = pcall(sandbox, code)
+  print(ok and "ALLOWED " or "blocked ", label, ok and "" or err)
+end
+myos = os
+tools = { run = os.execute, nested = { deep = io.open } }
+gref = _G
+loader = load
+var = "test"
+settings = { count = 5, inner = { x = 1 } }
+function greet(n) return "hi " .. n end
+
+try("os",            [[ import(module, "os") ]])
+try("io",            [[ import(module, "io") ]])
+try("_G",            [[ import(variable, "_G") ]])
+try("load",          [[ import(func, "load") ]])
+try("require",       [[ import(func, "require") ]])
+try("web",           [[ import(module, "web") ]])
+try("debug",         [[ import(module, "debug") ]])
+try("string",        [[ import(module, "string") ]])
+try("alias myos",    [[ import(variable, "myos") ]])
+try("tools.run",     [[ import(variable, "tools") ]])
+try("alias _G",      [[ import(variable, "gref") ]])
+try("alias load",    [[ import(func, "loader") ]])
+try("user var",      [[ import(variable, "var"); assert(var == "test") ]])
+try("user table",    [[ import(tabletype, "settings"); assert(settings.inner.x == 1); settings.count = 9 ]])
+try("user function", [[ import(func, "greet"); assert(greet("x") == "hi x") ]])
+try("no globals leak", [[ assert(os == nil and io == nil and load == nil and _G == nil) ]])
+print("settings.count still", settings.count)

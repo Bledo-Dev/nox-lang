@@ -1,0 +1,24 @@
+var = "test"
+
+settings = {
+  count = 5
+}
+
+print("Main var before:", var)
+print("Main count before:", settings.count)
+
+sandbox[[
+  import(variable, "var")
+  import(tabletype, "settings")
+
+  print("Sandbox var:", var)
+  print("Sandbox count:", settings.count)
+
+  var = "changed only in sandbox"
+  settings.count = 999
+  sandbox_only = "hidden from main"
+]]
+
+print("Main var after:", var)
+print("Main count after:", settings.count)
+print("Sandbox-only value:", sandbox_only)

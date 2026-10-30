@@ -1,0 +1,6 @@
+for _, n in ipairs{10, 50, 150, 199, 201} do
+  local s = string.rep("[", n) .. string.rep("]", n)
+  print(n, pcall(json.decode, s))
+  local o = string.rep('{"a":', n) .. "1" .. string.rep("}", n)
+  print(n, pcall(json.decode, o))
+end

@@ -1,0 +1,16 @@
+-- Normal sandbox use: share data in, keep changes out
+playerName = "Player1"
+stats = { kills = 12, deaths = 3 }
+function ratio(k, d) return k / d end
+
+sandbox[[
+  import(variable, "playerName")
+  import(tabletype, "stats")
+  import(func, "ratio")
+  print("inside:", playerName, "K/D", ratio(stats.kills, stats.deaths))
+  stats.kills = 0
+  playerName = "hacked"
+  print("os inside sandbox:", os, "io:", io)
+]]
+print("outside:", playerName, stats.kills)
+print("blocked:", pcall(sandbox, [[ import(module, "os") ]]))

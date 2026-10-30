@@ -1,0 +1,11 @@
+local good = { '0', '-0', '1.5e3', '-12.25E-2', '"a\\"b"', '"\\u00e9"', '[]', '{}', ' [1, 2 ,3] ',
+  '{"a":{"b":[true,false,null]}}', '"\\ud83d\\ude00"', '123456789012', '9007199254740993', '{"":1}', '"\\ud83d"', '"\\ude00"' }
+local bad = { '', ' ', '01', '1.', '.5', '+1', '-', '[1,]', '{"a":1,}', '{a:1}', "'x'", '"\\x"',
+  'nul', 'tru', '[1 2]', '{"a" 1}', '"abc', '1 2', '"\t"', 'NaN', '[', '{' }
+local fails = 0
+for _, s in ipairs(good) do local ok, v = pcall(json.decode, s); if not ok then fails = fails + 1; print("SHOULD PASS", s, v) end end
+for _, s in ipairs(bad) do local ok, v = pcall(json.decode, s); if ok then fails = fails + 1; print("SHOULD FAIL", s, v) end end
+local t = json.decode('{"a":{"b":[true,false,null]},"n":-12.25E-2,"i":42}')
+assert(t.a.b[1] == true and t.a.b[2] == false and t.a.b[3] == json.null and t.i == 42 and math.type(t.i) == "integer")
+print(pcall(json.decode, 5)); print(pcall(json.decode))
+print("json checks failed:", fails)

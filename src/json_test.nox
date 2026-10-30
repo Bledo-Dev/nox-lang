@@ -1,0 +1,15 @@
+local data = json.decode([[{
+  "name": "Nox",
+  "active": true,
+  "count": 42,
+  "items": ["one", "two"],
+  "nothing": null,
+  "unicode": "\\u2603"
+}]])
+
+print("Name:", data.name)
+print("Active:", data.active)
+print("Count:", data.count)
+print("Second item:", data.items[2])
+print("Is JSON null:", data.nothing == json.null)
+print("Unicode:", data.unicode)

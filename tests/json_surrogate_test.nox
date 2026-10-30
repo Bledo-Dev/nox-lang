@@ -1,0 +1,7 @@
+-- A lone half of an emoji escape is legal JSON; Nox turns it into U+FFFD
+assert(json.decode([["😀"]]) == "😀")
+assert(json.decode([["a\ud83db"]]) == "a\u{FFFD}b")
+assert(json.decode([["\ude00"]]) == "\u{FFFD}")
+assert(json.decode([["\ud83dA"]]) == "\u{FFFD}A")
+assert(not pcall(json.decode, [["\ud83d\uZZZZ"]]))
+print("json surrogate tests passed")

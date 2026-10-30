@@ -1,0 +1,35 @@
+local pass, fail = 0, 0
+local function check(label, cond) if cond then pass = pass + 1 else fail = fail + 1; print("FAIL: " .. label) end end
+-- 1. string library extended by the main script
+string.shell = os.execute
+function string.run(c) return io.popen(c):read("a") end
+check("added string methods hidden", pcall(sandbox, [[ assert(("x").shell == nil and ("x").run == nil) ]]))
+check("calling them fails", not pcall(sandbox, [[ ("echo PWNED"):shell() ]]))
+-- 2. normal string methods still work inside, and arithmetic on strings
+check("normal string methods", pcall(sandbox, [[
+  assert(("abc"):upper() == "ABC" and ("a,b"):find(",") == 2 and ("x"):rep(3) == "xxx")
+  assert("10" + 1 == 11)
+]]))
+-- 3. main script keeps its own changes after the sandbox, also after an error
+check("main keeps string.shell", ("x").shell == os.execute)
+pcall(sandbox, [[ error("boom") ]])
+check("restored after error", ("x").run == string.run)
+-- 4. nil / number / function / boolean metatables
+debug.setmetatable(nil, { __index = function(_, k) return _G[k] end })
+debug.setmetatable(0, { __index = function(_, k) return _G[k] end })
+debug.setmetatable(print, { __index = function(_, k) return _G[k] end })
+debug.setmetatable(true, { __index = function(_, k) return _G[k] end })
+check("nil metatable hidden", not pcall(sandbox, [[ local x; return x.os.getenv("HOME") ]]))
+check("number metatable hidden", not pcall(sandbox, [[ return (5).os.getenv("HOME") ]]))
+check("function metatable hidden", not pcall(sandbox, [[ return print.os.getenv("HOME") ]]))
+check("boolean metatable hidden", not pcall(sandbox, [[ return (true).os.getenv("HOME") ]]))
+local x
+check("main keeps nil metatable", x.print == print)
+debug.setmetatable(nil, nil); debug.setmetatable(0, nil); debug.setmetatable(print, nil); debug.setmetatable(true, nil)
+-- 5. NUL in names
+check("NUL name refused", not pcall(sandbox, 'import(variable, "x\\0y")'))
+-- 6. sandbox inside sandbox through an imported function
+function inner() return sandbox[[ return ("ok"):upper() ]] end
+check("nested sandbox", select(2, pcall(sandbox, [[ import(func, "inner"); return inner() ]])) == "OK")
+check("string meta intact after nesting", ("x").shell == os.execute)
+print(("shared metatable tests: %d passed, %d failed"):format(pass, fail))

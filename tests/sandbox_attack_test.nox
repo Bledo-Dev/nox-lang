@@ -1,0 +1,79 @@
+local pass, fail = 0, 0
+local function blocked(label, code)
+  local ok, err = pcall(sandbox, code)
+  if ok then fail = fail + 1; print("FAIL (allowed): " .. label)
+  else pass = pass + 1 end
+end
+local function allowed(label, code)
+  local ok, err = pcall(sandbox, code)
+  if ok then pass = pass + 1 else fail = fail + 1; print("FAIL (blocked): " .. label, err) end
+end
+-- names
+for _, n in ipairs{"os","io","_G","load","loadfile","dofile","require","debug","package","string",
+    "table","math","utf8","coroutine","web","json","sandbox","setmetatable","getmetatable","rawget",
+    "rawset","collectgarbage","arg","print","_VERSION","_ENV"} do
+  blocked("name " .. n, ('import(variable, %q)'):format(n))
+end
+-- aliases and nesting
+myos = os; gref = _G; loader = load; tools = { run = os.execute, deep = { io = io } }
+keyfn = { [os.exit] = true }
+loaders = { table.unpack(package.searchers) }
+pre = { open = package.preload and package.preload.debug }
+filemeta = getmetatable(io.stdout)
+fileidx = { m = getmetatable(io.stdout).__index }
+strmeta = getmetatable("")
+loaded = package.loaded
+lines = io.lines(arg and arg[0] or "attack.nox")
+gm = string.gmatch("a b", "%a")
+cw = coroutine.wrap(function() end)
+co = coroutine.create(function() end)
+f = io.stdout
+reg = debug.getregistry()
+upv = { debug.getupvalue(require, 1) }
+for _, n in ipairs{"myos","gref","loader","tools","keyfn","loaders","filemeta","fileidx","strmeta",
+    "loaded","lines","gm","cw","co","f","reg","upv"} do
+  blocked("alias " .. n, ('import(variable, %q)'):format(n))
+end
+if pre.open then blocked("preload.debug", 'import(variable, "pre")') end
+-- overridden safe functions must not leak into the sandbox
+local realos, realprint, realtostring = os, print, tostring
+tostring = function() return realos end
+print = function() return realos end
+allowed("overridden tostring/print are not used", [[
+  assert(type(tostring(1)) == "string", "got the fake tostring")
+  assert(print("x") == nil, "got the fake print")
+]])
+tostring, print = realtostring, realprint
+-- _G metatable trick
+setmetatable(_G, { __index = function(_, k) if k == "ghost" then return os end end })
+blocked("ghost via _G __index", 'import(variable, "ghost")')
+setmetatable(_G, nil)
+-- deep and cyclic tables
+deep = {}; local c = deep; for i = 1, 99 do c.x = {}; c = c.x end
+allowed("99-level table", 'import(variable, "deep")')
+deeper = {}; c = deeper; for i = 1, 100000 do c.x = {}; c = c.x end
+blocked("100000-level table (clean error, no crash)", 'import(variable, "deeper")')
+cyc = { name = "loop" }; cyc.self = cyc; cyc.list = { cyc, cyc }
+allowed("cyclic table", [[ import(variable, "cyc"); assert(cyc.self == cyc and cyc.list[1] == cyc) ]])
+big = {}; for i = 1, 200000 do big[i] = { i } end
+allowed("200k-entry table", [[ import(variable, "big"); assert(#big == 200000 and big[5][1] == 5) ]])
+-- normal user data
+nul = { a = json.null }
+allowed("json.null inside table", [[ import(variable, "nul"); assert(nul.a ~= nil) ]])
+score = 10; name = "Nox"; flag = true
+function add(a, b) return a + b end
+allowed("plain values + user function", [[
+  import(variable, "score"); import(variable, "name"); import(variable, "flag"); import(func, "add")
+  assert(add(score, 5) == 15 and name == "Nox" and flag)
+]])
+-- environment of the sandbox itself
+allowed("nothing dangerous in sandbox globals", [[
+  for _, n in ipairs{"os","io","load","require","debug","package","string","_G","setmetatable",
+                     "getmetatable","rawset","collectgarbage","web","json","sandbox","dofile"} do
+    assert(_ENV[n] == nil, n .. " is visible")
+  end
+]])
+blocked("bytecode cannot be loaded", string.dump(function() end))
+blocked("unknown kind", 'import(nonsense, "score")')
+blocked("undefined global", 'import(variable, "doesnotexist")')
+print(("sandbox attack tests: %d passed, %d failed"):format(pass, fail))

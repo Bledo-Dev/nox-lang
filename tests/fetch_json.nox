@@ -1,0 +1,9 @@
+-- web.fetch + json.decode working together on a real API
+local body, status = web.fetch("https://httpbin.org/json", { timeout = 10 })
+if not body then error(status) end
+print("status:", status)
+local data = json.decode(body)
+print("title:", data.slideshow.title)
+print("author:", data.slideshow.author)
+print("slides:", #data.slideshow.slides)
+for i, slide in ipairs(data.slideshow.slides) do print(" ", i, slide.title) end

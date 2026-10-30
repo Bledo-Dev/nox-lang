@@ -1,0 +1,15 @@
+local function show(label, ...) print(label, ...) end
+local body, status = web.fetch("https://httpbin.org/anything?x=1", {
+  method = "POST", body = '{"hello":"nox"}', timeout = 10,
+  headers = { ["Content-Type"] = "application/json", ["X-Nox-Test"] = "yes" } })
+if body then
+  local ok, data = pcall(json.decode, body)
+  show("POST status", status)
+  if ok then show("server saw method/header/body:", data.method, data.headers["X-Nox-Test"], data.data) end
+else show("POST failed", status) end
+show("404", select(2, web.fetch("https://httpbin.org/status/404", { timeout = 10 })))
+show("bad host", web.fetch("https://this-host-does-not-exist.invalid/", { timeout = 5 }))
+show("timeout", web.fetch("https://httpbin.org/delay/5", { timeout = 1.5 }))
+show("ftp", web.fetch("ftp://example.com/"))
+show("no query path", select(2, web.fetch("https://example.com?q=1", { timeout = 10 })))
+print("header injection ->", pcall(web.fetch, "https://example.com/", { headers = { X = "a\r\nB: c" } }))

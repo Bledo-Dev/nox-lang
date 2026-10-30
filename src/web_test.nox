@@ -1,0 +1,9 @@
+local body, status = web.fetch("https://google.com/")
+
+if not body then
+  error(status)
+end
+
+print("HTTP status:", status)
+print("Downloaded bytes:", #body)
+print(body:sub(1, 80))
