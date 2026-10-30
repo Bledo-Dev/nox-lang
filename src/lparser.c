@@ -580,6 +580,9 @@ static void adjust_assign (LexState *ls, int nvars, int nexps, expdesc *e) {
 static l_noret jumpscopeerror (LexState *ls, Labeldesc *gt) {
   TString *tsname = getlocalvardesc(ls->fs, gt->nactvar)->vd.name;
   const char *varname = (tsname != NULL) ? getstr(tsname) : "*";
+  if (strcmp(getstr(gt->name), "?continue") == 0)   /* Nox: 'continue' in repeat-until */
+    luaK_semerror(ls, "'continue' at line %d skips the local '%s', which the 'until' condition uses",
+                  gt->line, varname);
   luaK_semerror(ls,
      "<goto %s> at line %d jumps into the scope of '%s'",
       getstr(gt->name), gt->line, varname);  /* raise the error */
@@ -1430,6 +1433,25 @@ static void block (LexState *ls) {
 
 
 /*
+** Nox: 'continue' is a goto to a hidden label at the end of the loop's body.
+** ("?continue" can't be written as a name, so it can't clash with a user label.)
+*/
+static TString *continuename (LexState *ls) {
+  return luaX_newstring(ls, "?continue", 9);
+}
+
+/* the body of a while or for loop: a block that ends with the 'continue' label */
+static void loopbody (LexState *ls) {
+  FuncState *fs = ls->fs;
+  BlockCnt bl;
+  enterblock(fs, &bl, 0);
+  statlist(ls);
+  createlabel(ls, continuename(ls), ls->linenumber, 1);
+  leaveblock(fs);
+}
+
+
+/*
 ** structure to chain all variables in the left-hand side of an
 ** assignment
 */
@@ -1594,7 +1616,7 @@ static void whilestat (LexState *ls, int line) {
   condexit = cond(ls);
   enterblock(fs, &bl, 1);
   checknext(ls, TK_DO);
-  block(ls);
+  loopbody(ls);
   luaK_jumpto(fs, whileinit);
   check_match(ls, TK_END, TK_WHILE, line);
   leaveblock(fs);
@@ -1612,6 +1634,8 @@ static void repeatstat (LexState *ls, int line) {
   enterblock(fs, &bl2, 0);  /* scope block */
   luaX_next(ls);  /* skip REPEAT */
   statlist(ls);
+  /* Nox: 'continue' goes to the condition (it can't skip a local the condition sees) */
+  createlabel(ls, continuename(ls), ls->linenumber, 0);
   check_match(ls, TK_UNTIL, TK_REPEAT, line);
   condexit = cond(ls);  /* read condition (inside scope block) */
   if (bl2.upval) {  /* upvalues? */
@@ -1672,7 +1696,7 @@ static void forbody (LexState *ls, int base, int line, int nvars, int isgen) {
   enterblock(fs, &bl, 0);  /* scope for declared variables */
   adjustlocalvars(ls, nvars);
   luaK_reserveregs(fs, nvars);
-  block(ls);
+  loopbody(ls);
   leaveblock(fs);  /* end of scope for declared variables */
   fixforjump(fs, prep, luaK_getlabel(fs), 0);
   if (isgen) {  /* generic for? */
@@ -1999,14 +2023,81 @@ static void funcstat (LexState *ls, int line) {
 }
 
 
+/* Nox: the operator of a compound assignment token (x += 1), or OPR_NOBINOPR */
+static BinOpr compoundop (int tok) {
+  switch (tok) {
+    case TK_ADDEQ: return OPR_ADD;
+    case TK_SUBEQ: return OPR_SUB;
+    case TK_MULEQ: return OPR_MUL;
+    case TK_DIVEQ: return OPR_DIV;
+    case TK_IDIVEQ: return OPR_IDIV;
+    case TK_MODEQ: return OPR_MOD;
+    case TK_POWEQ: return OPR_POW;
+    case TK_CONCATEQ: return OPR_CONCAT;
+    default: return OPR_NOBINOPR;
+  }
+}
+
+/*
+** Nox: 'v op= exp' is 'v = v op (exp)', with v's table and key worked out only once
+** (t[f()] += 1 calls f once).
+*/
+static void compoundassign (LexState *ls, expdesc *v, BinOpr op) {
+  FuncState *fs = ls->fs;
+  expdesc cur, e2;
+  int line = ls->linenumber;
+  check_condition(ls, vkisvar(v->k), "syntax error");
+  check_readonly(ls, v);
+  cur = *v;
+  switch (v->k) {
+    case VINDEXED: case VVARGIND: case VINDEXUP: case VINDEXI: case VINDEXSTR: {
+      /* read the current value into a new register; the table and key stay for the store */
+      int r = fs->freereg;
+      OpCode o = v->k == VINDEXED ? OP_GETTABLE : v->k == VVARGIND ? OP_GETVARG : v->k == VINDEXUP ? OP_GETTABUP
+               : v->k == VINDEXI ? OP_GETI : OP_GETFIELD;
+      luaK_reserveregs(fs, 1);
+      luaK_codeABC(fs, o, r, v->u.ind.t, v->u.ind.idx);
+      init_exp(&cur, VNONRELOC, r);
+      break;
+    }
+    default: break;  /* a local or upvalue: read as it is */
+  }
+  luaX_next(ls);  /* skip the operator */
+  luaK_infix(fs, op, &cur);
+  expr(ls, &e2);
+  luaK_posfix(fs, op, &cur, &e2, line);
+  luaK_storevar(fs, v, &cur);
+}
+
+/* Nox: 'continue' (only as the last statement of a block, like Luau) */
+static int iscontinue (LexState *ls) {
+  int lk;
+  if (ls->t.token != TK_NAME || strcmp(getstr(ls->t.seminfo.ts), "continue") != 0) return 0;
+  lk = luaX_lookahead(ls);
+  return lk == TK_END || lk == TK_UNTIL || lk == TK_ELSE || lk == TK_ELSEIF || lk == TK_EOS || lk == ';';
+}
+
+static void continuestat (LexState *ls, int line) {
+  BlockCnt *bl;
+  for (bl = ls->fs->bl; bl != NULL && !bl->isloop; bl = bl->previous) ;
+  if (bl == NULL) luaX_syntaxerror(ls, "continue outside a loop");
+  luaX_next(ls);  /* skip 'continue' */
+  newgotoentry(ls, continuename(ls), line);
+}
+
+
 static void exprstat (LexState *ls) {
   /* stat -> func | assignment */
   FuncState *fs = ls->fs;
   struct LHS_assign v;
+  BinOpr cop;
   suffixedexp(ls, &v.v);
   if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
     v.prev = NULL;
     restassign(ls, &v, 1);
+  }
+  else if ((cop = compoundop(ls->t.token)) != OPR_NOBINOPR) {  /* stat -> v op= exp (Nox) */
+    compoundassign(ls, &v.v, cop);
   }
   else {  /* stat -> func */
     Instruction *inst;
@@ -2131,7 +2222,8 @@ static void statement (LexState *ls) {
 #endif
     /* FALLTHROUGH */
     default: {  /* stat -> func | assignment */
-      exprstat(ls);
+      if (iscontinue(ls)) continuestat(ls, line);   /* Nox */
+      else exprstat(ls);
       break;
     }
   }

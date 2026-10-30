@@ -48,7 +48,9 @@ static const char *const luaX_tokens [] = {
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until", "while",
     "//", "..", "...", "==", ">=", "<=", "~=",
-    "<<", ">>", "::", "<eof>",
+    "<<", ">>", "::",
+    "+=", "-=", "*=", "/=", "//=", "%=", "^=", "..=",
+    "<eof>",
     "<number>", "<integer>", "<name>", "<string>"
 };
 
@@ -478,6 +480,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       }
       case '-': {  /* '-' or '--' (comment) */
         next(ls);
+        if (check_next1(ls, '=')) return TK_SUBEQ;  /* '-=' (Nox) */
         if (ls->current != '-') return '-';
         /* else is a comment */
         next(ls);
@@ -522,9 +525,19 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         else if (check_next1(ls, '>')) return TK_SHR;  /* '>>' */
         else return '>';
       }
+      case '+': case '*': case '%': case '^': {  /* '+' or '+=' and so on (Nox) */
+        int c = ls->current;
+        next(ls);
+        if (check_next1(ls, '=')) return c == '+' ? TK_ADDEQ : c == '*' ? TK_MULEQ : c == '%' ? TK_MODEQ : TK_POWEQ;
+        return c;
+      }
       case '/': {
         next(ls);
-        if (check_next1(ls, '/')) return TK_IDIV;  /* '//' */
+        if (check_next1(ls, '/')) {
+          if (check_next1(ls, '=')) return TK_IDIVEQ;  /* '//=' (Nox) */
+          return TK_IDIV;  /* '//' */
+        }
+        else if (check_next1(ls, '=')) return TK_DIVEQ;  /* '/=' (Nox) */
         else return '/';
       }
       case '~': {
@@ -546,6 +559,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         if (check_next1(ls, '.')) {
           if (check_next1(ls, '.'))
             return TK_DOTS;   /* '...' */
+          else if (check_next1(ls, '=')) return TK_CONCATEQ;   /* '..=' (Nox) */
           else return TK_CONCAT;   /* '..' */
         }
         else if (!lisdigit(ls->current)) return '.';

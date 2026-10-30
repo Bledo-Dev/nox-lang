@@ -47,6 +47,17 @@ end
 More in [src/NOX_WEB.md](src/NOX_WEB.md). On other systems `web.fetch` returns
 `nil` and a message saying so.
 
+**Luau-style shortcuts.** `x += 1` (and `-= *= /= //= %= ^= ..=`), and `continue` in loops.
+
+```lua
+local score = 0
+for i = 1, 10 do
+  if i % 2 == 0 then continue end
+  score += i
+end
+print(score)   -- 25
+```
+
 Everything else is Lua 5.5, so the [Lua manual](https://www.lua.org/manual/5.5/)
 applies.
 

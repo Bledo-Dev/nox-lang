@@ -1,0 +1,95 @@
+-- += style operators and continue (Nox additions). Prints ALL OK.
+local fails = 0
+local function check(name, got, want)
+  if got ~= want then print("FAIL", name, got, want); fails = fails + 1 end
+end
+-- compound on locals
+local x = 10
+x += 5; check("+=", x, 15)
+x -= 3; check("-=", x, 12)
+x *= 2; check("*=", x, 24)
+x /= 4; check("/=", x, 6.0)
+x = 17; x //= 5; check("//=", x, 3)
+x = 17; x %= 5; check("%=", x, 2)
+x = 2; x ^= 10; check("^=", x, 1024.0)
+local s = "a"; s ..= "b"; s ..= 1; check("..=", s, "ab1")
+x = 3; x += 2 * 4 + 1; check("rhs expr", x, 12)
+x = 10; x -= 2 - 1; check("rhs precedence", x, 9)
+-- globals
+G = 1; G += 1; check("global", G, 2)
+-- table fields
+local t = { a = 1, [1] = 5, n = { m = 2 } }
+t.a += 10; check("field", t.a, 11)
+t[1] *= 3; check("index int", t[1], 15)
+local k = "a"; t[k] -= 1; check("index var", t[k], 10)
+t.n.m ..= "x"; check("nested", t.n.m, "2x")
+-- key evaluated once
+local calls = 0
+local function key() calls = calls + 1; return "c" end
+t.c = 0
+t[key()] += 7; check("once value", t.c, 7); check("once calls", calls, 1)
+local function tbl() calls = calls + 1; return t end
+calls = 0; tbl().c += 1; check("tbl once", calls, 1); check("tbl val", t.c, 8)
+-- upvalue
+local u = 1
+local function bump() u += 10 end
+bump(); bump(); check("upvalue", u, 21)
+-- metamethods still work
+local mt = { __add = function(a, b) return "added" end }
+local obj = setmetatable({}, mt); obj += 1; check("metamethod", obj, "added")
+-- in a loop with many registers
+local sum = 0
+for i = 1, 100 do local a, b, c = i, i, i; sum += a + b - c end
+check("loop sum", sum, 5050)
+-- continue in for
+local evens = 0
+for i = 1, 10 do
+  if i % 2 == 1 then continue end
+  evens += 1
+end
+check("for continue", evens, 5)
+-- continue in while
+local i, cnt = 0, 0
+while i < 10 do
+  i += 1
+  if i <= 3 then continue end
+  cnt += 1
+end
+check("while continue", cnt, 7)
+-- continue in generic for, nested loops
+local out = {}
+for _, row in ipairs({ {1, 2}, {3, 4} }) do
+  for _, v in ipairs(row) do
+    if v == 2 then continue end
+    out[#out + 1] = v
+  end
+  if row[1] == 3 then continue end
+  out[#out + 1] = "end"
+end
+check("nested continue", table.concat(out, ","), "1,end,3,4")
+-- continue in repeat
+local r, rc = 0, 0
+repeat
+  r += 1
+  if r == 2 then continue end
+  rc += 1
+until r >= 5
+check("repeat continue", rc, 4)
+-- continue with a closure capturing a loop local (needs close)
+local fns = {}
+for j = 1, 3 do
+  local captured = j
+  fns[#fns + 1] = function() return captured end
+  if j == 2 then continue end
+end
+check("closure", fns[1]() + fns[2]() + fns[3](), 6)
+-- 'continue' is still a normal name elsewhere
+local continue = 5; continue += 1; check("name", continue, 6)
+local tt = { continue = 1 }; check("field name", tt.continue, 1)
+-- comments and minus still work
+local m = 5 -- comment
+m = m - -1; check("minus minus", m, 6)
+local mm = 5--[[ long ]]+1; check("long comment", mm, 6)
+check("concat", "a" .. "b", "ab"); check("dots", select("#", 1, 2), 2)
+check("idiv", 7 // 2, 3)
+print(fails == 0 and "ALL OK" or ("FAILS: " .. fails))
